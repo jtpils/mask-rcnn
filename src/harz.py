@@ -82,7 +82,7 @@ class HarzConfig(Config):
 
 class HarzDataset(utils.Dataset):
 
-    def load_balloon(self, dataset_dirX, dataset_dirY, height, width, classnames = ['bomb', 'meiler']):
+    def load_harz(self, dataset_dirX, dataset_dirY, height, width, classnames = ['bomb', 'meiler']):
         """Load a subset of the Balloon dataset.
         dataset_dirX: directory of the dataset images.
         dataset_dirY: directory of masks and instances
@@ -142,7 +142,7 @@ class HarzDataset(utils.Dataset):
             _,name = os.path.split(im)
             just_name,ext = os.path.splitext(name)
             self.add_image(
-                "balloon",
+                "harz",
                 image_id=name,  # use file name as a unique image id
                 path=im,
                 mask_path=os.path.join(dataset_dirY,just_name+'.npy'),
@@ -200,7 +200,7 @@ class HarzDataset(utils.Dataset):
     def image_reference(self, image_id):
         """Return the path of the image."""
         info = self.image_info[image_id]
-        if info["source"] == "balloon":
+        if info["source"] == "harz":
             return info["path"]
         else:
             super(self.__class__, self).image_reference(image_id)
@@ -213,13 +213,13 @@ def train(model,dataset_dirX='/notebooks/tmp/data/bomb1_meiler2/bomb1_meiler2x_o
  			height=256, width=256, classnames = ['bomb', 'meiler']):
     """Train the model."""
     # Training dataset.
-    dataset_train = BalloonDataset()
-    dataset_train.load_balloon(dataset_dirX, dataset_dirY, height, width, classnames)
+    dataset_train = HarzDataset()
+    dataset_train.load_harz(dataset_dirX, dataset_dirY, height, width, classnames)
     dataset_train.prepare()
 
     # Validation dataset
-    dataset_val = BalloonDataset()
-    dataset_val.load_balloon(val_dataset_dirX, val_dataset_dirY, height, width, classnames)
+    dataset_val = HarzDataset()
+    dataset_val.load_harz(val_dataset_dirX, val_dataset_dirY, height, width, classnames)
     dataset_val.prepare()
 
     # *** This training schedule is an example. Update to your needs ***
