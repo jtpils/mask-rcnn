@@ -42,6 +42,7 @@ from glob import glob
 from src.config import Config
 import src.model as modellib
 import src.utils as utils
+from src import harz
 
 # Path to trained weights file
 # COCO_WEIGHTS_PATH = os.path.join(ROOT_DIR, "mask_rcnn_coco.h5")
@@ -70,15 +71,12 @@ class HarzConfig(Config):
     NUM_CLASSES = 1 + 2  # Background + balloon
 
     # Number of training steps per epoch
-    STEPS_PER_EPOCH = 1000
-    VALIDATION_STEPS = 100
+    STEPS_PER_EPOCH = 100
 
     # Skip detections with < 90% confidence
-    DETECTION_MIN_CONFIDENCE = 0.8
+    DETECTION_MIN_CONFIDENCE = 0.9
 
-    IMAGE_RESIZE_MODE = "square"
-    IMAGE_MIN_DIM = 32
-    IMAGE_MAX_DIM = 256
+    IMAGE_RESIZE_MODE = "none"
 
 
 ############################################################
@@ -213,7 +211,6 @@ class HarzDataset(utils.Dataset):
 
 def train(model,dataset_dirX='/notebooks/tmp/data/bomb1_meiler2/bomb1_meiler2x_original',
  			dataset_dirY='/notebooks/tmp/data/bomb1_meiler2/mrcnn_ys/allmasks',
-            config=None,
  			val_dataset_dirX='/notebooks/tmp/data/bomb1_meiler2/validation/x', 
  			val_dataset_dirY='/notebooks/tmp/data/bomb1_meiler2/validation/mrcnn_ys/allmasks', 
  			height=256, width=256, classnames = ['bomb', 'meiler']):
@@ -358,9 +355,9 @@ if __name__ == '__main__':
 
     # Configurations
     if args.command == "train":
-        config = HarzConfig()
+        config = harz.HarzConfig()
     else:
-        class InferenceConfig(HarzConfig):
+        class InferenceConfig(harz.HarzConfig):
             # Set batch size to 1 since we'll be running inference on
             # one image at a time. Batch size = GPU_COUNT * IMAGES_PER_GPU
             GPU_COUNT = 1
@@ -409,10 +406,12 @@ if __name__ == '__main__':
     #     model.load_weights(weights_path, by_name=True)
 
     # Train or evaluate
+    dataset_dirX='/notebooks/tmp/data/new_mask_rcnn_data/bomb1_meiler2x'
+    dataset_dirY='/notebooks/tmp/data/new_mask_rcnn_data/ys/masks'
     if args.command == "train":
-        train(model)
+        harz.train(model,dataset_dirX,dataset_dirY,config)
     elif args.command == "splash":
-        detect_and_color_splash(model, image_path=args.image,
+        harz.detect_and_color_splash(model, image_path=args.image,
                                 video_path=args.video)
     else:
         print("'{}' is not recognized. "
