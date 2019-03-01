@@ -25,7 +25,7 @@ ROOT_DIR = os.path.abspath("../")
 
 # Import Mask RCNN
 sys.path.append(ROOT_DIR)  # To find local version of the library
-from mrcnn import utils
+from src import utils
 
 
 ############################################################
@@ -72,7 +72,7 @@ def random_colors(N, bright=True):
 def apply_mask(image, mask, color, alpha=0.5):
     """Apply the given mask to the image.
     """
-    for c in range(3):
+    for c in range(1):
         image[:, :, c] = np.where(mask == 1,
                                   image[:, :, c] *
                                   (1 - alpha) + alpha * color[c] * 255,
@@ -163,7 +163,9 @@ def display_instances(image, boxes, masks, class_ids, class_names,
             verts = np.fliplr(verts) - 1
             p = Polygon(verts, facecolor="none", edgecolor=color)
             ax.add_patch(p)
-    ax.imshow(masked_image.astype(np.uint8))
+    # import matplotlib as mpl
+    print("shape: ",masked_image.shape)
+    ax.imshow(np.squeeze(masked_image,-1).astype(np.uint8))
     if auto_show:
         plt.show()
 
