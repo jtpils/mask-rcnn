@@ -861,8 +861,319 @@ def run_detection(batch_size, windowSize, output_patch, step_size, model, origin
                )
     return prediction
 
+def mask_to_polygon(tif_file, array, output_shp_file, field_name=None):
+    sourceRaster = gdal.Open(tif_file,gdalconst.GA_ReadOnly)
+    band = sourceRaster.GetRasterBand(1)
+    driver = gdal.GetDriverByName('MEM')
+    dataset = driver.Create('', array.shape[1], array.shape[0], 1, gdal.GDT_Float32)
+    dataset.GetRasterBand(1).WriteArray(array)
+    original_data = gdal.Open(tif_file, gdalconst.GA_ReadOnly)
+    geotrans = original_data.GetGeoTransform()
+    proj = original_data.GetProjection()
+    dataset.SetGeoTransform(geotrans)
+    dataset.SetProjection(proj)
+    original_data = None
+    band = dataset.GetRasterBand(1)
+
+    driver = ogr.GetDriverByName("ESRI Shapefile")
+    outDatasource = driver.CreateDataSource(output_shp_file)
+    outLayer = outDatasource.CreateLayer("polygonized", srs=None)
+    if field_name is None:
+        field_name='MyFLD'
+    newField = ogr.FieldDefn(field_name, ogr.OFTInteger)
+    outLayer.CreateField(newField)
+    gdal.Polygonize(band, None, outLayer, 0, [], callback=None )
+    outDatasource.Destroy()
+    sourceRaster = None
+    dataset.FlushCache()
+    dataset = None
+
+    ioShpFile = ogr.Open(output_shp_file, update = 1)
+    lyr = ioShpFile.GetLayerByIndex(0)
+    lyr.ResetReading() 
+    for i in lyr:
+        lyr.SetFeature(i)
+        if i.GetField(field_name)==0:
+            lyr.DeleteFeature(i.GetFID())
+    ioShpFile.Destroy()
+
+def mask_to_polygon2(tif_file, array, output_shp_file, field_name=None, class_id=1, confidence=0.9):
+    sourceRaster = gdal.Open(tif_file,gdalconst.GA_ReadOnly)
+    band = sourceRaster.GetRasterBand(1)
+    driver = gdal.GetDriverByName('MEM')
+    dataset = driver.Create('', array.shape[1], array.shape[0], 1, gdal.GDT_Float32)
+    dataset.GetRasterBand(1).WriteArray(array)
+    original_data = gdal.Open(tif_file, gdalconst.GA_ReadOnly)
+    geotrans = original_data.GetGeoTransform()
+    proj = original_data.GetProjection()
+    dataset.SetGeoTransform(geotrans)
+    dataset.SetProjection(proj)
+    original_data = None
+    band = dataset.GetRasterBand(1)
+
+    driver = ogr.GetDriverByName("ESRI Shapefile")
+    outDatasource = driver.CreateDataSource(output_shp_file)
+    outLayer = outDatasource.CreateLayer("polygonized", srs=None)
+    if field_name is None:
+        field_name='BBox'
+    newField = ogr.FieldDefn(field_name, ogr.OFTInteger)
+    outLayer.CreateField(newField)
+    gdal.Polygonize(band, None, outLayer, 0, [], callback=None )
+    outLayer.CreateField(ogr.FieldDefn("cls_id",     ogr.OFTInteger))
+    outLayer.CreateField(ogr.FieldDefn("conf",     ogr.OFTReal))
+    # feature = outLayer.GetNextFeature()
+    # feature.SetField('class_id_bb', class_id)
+    # feature.SetField('confidence_bb', confidence)
+    # outLayer.SetFeature(feature)
+    outDatasource.Destroy()
+    sourceRaster = None
+    dataset.FlushCache()
+    dataset = None
+
+    ioShpFile = ogr.Open(output_shp_file, update = 1)
+    lyr = ioShpFile.GetLayerByIndex(0)
+    lyr.ResetReading() 
+    for i in lyr:
+        i.SetField('cls_id', class_id)
+        i.SetField('conf', confidence)
+        lyr.SetFeature(i)
+        if i.GetField(field_name)==0:
+            lyr.DeleteFeature(i.GetFID())
+    ioShpFile.Destroy()
+
+def write_results_to_polygons(results_dir, tif_file, result_dict,height=256,width=256):
+    # create directory for saving masks/bbox for current tif file
+    path,name_ext = os.path.split(tif_file)
+    name, ext = os.path.splitext(name_ext)
+    cur_dir = os.path.join(results_dir, name)
+    if not os.path.exists(cur_dir):
+        os.makedirs(cur_dir)
+    mask_shp_file = os.path.join(cur_dir, 'masks.shp')
+    bbox_shp_file = os.path.join(cur_dir, 'bbox.shp')
+
+    # create shapefiles to save mask/bb info!
+    driver_save_ogr = ogr.GetDriverByName("ESRI Shapefile")
+    out_mask_ds = driver_save_ogr.CreateDataSource(mask_shp_file)
+    out_bb_ds = driver_save_ogr.CreateDataSource(bbox_shp_file)
+
+    out_mask_layer = out_mask_ds.CreateLayer("polygonized", srs=None)
+    out_bb_layer = out_bb_ds.CreateLayer("polygonized", srs=None)
+
+    field_names_mask = ['Mask', 'cls_id', 'conf']
+    field_names_bb = ['BBox', 'cls_id', 'conf']
+    field_types = [ogr.OFTInteger, ogr.OFTInteger, ogr.OFTReal]
+    for fnm, fnb, ft in zip(field_names_mask, field_names_bb, field_types):
+            nfm = ogr.FieldDefn(fnm, ft)
+            nfb = ogr.FieldDefn(fnb, ft) 
+            out_bb_layer.CreateField(nfb)
+            out_mask_layer.CreateField(nfm)
+
+
+    original_data = gdal.Open(tif_file, gdalconst.GA_ReadOnly)
+    geotrans = original_data.GetGeoTransform()
+    proj = original_data.GetProjection()
+
+    # loop through each mask/bb and save to corresponding shapefile!
+    for j in range(len(result_dict['scores'])):
+
+        bb_array = np.zeros((height, width))
+        bb_array[result_dict['rois'][j][0]:result_dict['rois'][j][2],result_dict['rois'][j][1]:result_dict['rois'][j][3]] = 1
+        # Write bbox to RAM tif.
+        driver_gdal = gdal.GetDriverByName('MEM')
+        dataset = driver_gdal.Create('', bb_array.shape[1], bb_array.shape[0], 1, gdal.GDT_Float32)
+        dataset.GetRasterBand(1).WriteArray(bb_array)
+        dataset.SetGeoTransform(geotrans)
+        dataset.SetProjection(proj)
+        original_data = None
+        bb_band = dataset.GetRasterBand(1)
+
+        # Polygonize the created bb tif
+        driver_ogr = ogr.GetDriverByName("Memory")
+        bb_ds = driver_ogr.CreateDataSource('bb_pol')
+        bbLayer = bb_ds.CreateLayer("polygonized", srs=None)
+        field_names = ['BBox', 'cls_id', 'conf']
+        field_types = [ogr.OFTInteger, ogr.OFTInteger, ogr.OFTReal]
+        for fn,ft in zip(field_names,field_types):
+            nf = ogr.FieldDefn(fn, ft)
+            bbLayer.CreateField(nf)
+        gdal.Polygonize(bb_band, None, bbLayer, 0, [], callback=None )
+
+        schema = []
+        ldefn = bbLayer.GetLayerDefn()
+        for n in range(ldefn.GetFieldCount()):
+            fdefn = ldefn.GetFieldDefn(n)
+            schema.append(fdefn.name)
+        print (schema)
+
+        # Remove 0 polygons
+        for i in bbLayer:
+            i.SetField('cls_id', int(result_dict['class_ids'][j] ))
+            i.SetField('conf', float(result_dict['scores'][j]) )
+            bbLayer.SetFeature(i)
+            if i.GetField('BBox') == 0:
+                bbLayer.DeleteFeature(i.GetFID())
+
+        bbLayer.ResetReading()    
+        for i in bbLayer:
+            out_bb_layer.SetFeature(i)
+            out_bb_layer.CreateFeature(i)
+
+
+        # Do the same thing for masks
+        mask_array = result_dict['masks'][:,:,j]
+        # mask_array = np.rot90(mask_array,1)
+        # mask_array = np.fliplr(mask_array)
+        # bb_array[result_dict['rois'][i][0]:result_dict['rois'][i][2],result_dict['rois'][i][1]:result_dict['rois'][i][3]] = 1
+        # Write bbox to RAM tif.
+        # driver2 = gdal.GetDriverByName('MEM')
+        dataset2 = driver_gdal.Create('', mask_array.shape[1], mask_array.shape[0], 1, gdal.GDT_Float32)
+        dataset2.GetRasterBand(1).WriteArray(mask_array)
+        dataset2.SetGeoTransform(geotrans)
+        dataset2.SetProjection(proj)
+        mask_band = dataset2.GetRasterBand(1)
+
+        # Polygonize the created bb tif
+        # driver2 = ogr.GetDriverByName("Memory")
+        mask_ds = driver_ogr.CreateDataSource('bb_pol')
+        maskLayer = mask_ds.CreateLayer("polygonized", srs=None)
+        field_names = ['Mask', 'cls_id', 'conf']
+        # field_types = [ogr.OFTInteger, ogr.OFTInteger, ogr.OFTReal]
+        for fn,ft in zip(field_names,field_types):
+            nf = ogr.FieldDefn(fn, ft)
+            maskLayer.CreateField(nf)
+        gdal.Polygonize(mask_band, None, maskLayer, 0, [], callback=None )
+
+        # Remove 0 polygons
+        for i in maskLayer:
+            i.SetField('cls_id', int(result_dict['class_ids'][j]) )
+            i.SetField('conf', float(result_dict['scores'][j]) )
+            maskLayer.SetFeature(i)
+            if i.GetField('Mask') == 0:
+                maskLayer.DeleteFeature(i.GetFID())
+
+        maskLayer.ResetReading()    
+        for i in maskLayer:
+            out_mask_layer.SetFeature(i)
+            out_mask_layer.CreateFeature(i)
+
+        dataset.FlushCache()
+        dataset = None
+        dataset2.FlushCache()
+        dataset2 = None
+        mask_ds.Destroy()
+        bb_ds.Destroy()
+
+    out_mask_ds.Destroy()
+    out_bb_ds.Destroy()
+    original_data = None
+
+
+def mask_to_polygon3(tif_file, array, array2,output_shp_file, field_name=None, class_id=1, confidence=0.9):
+    sourceRaster = gdal.Open(tif_file,gdalconst.GA_ReadOnly)
+    band = sourceRaster.GetRasterBand(1)
+    driver = gdal.GetDriverByName('MEM')
+    dataset = driver.Create('', array.shape[1], array.shape[0], 1, gdal.GDT_Float32)
+    dataset.GetRasterBand(1).WriteArray(array)
+    original_data = gdal.Open(tif_file, gdalconst.GA_ReadOnly)
+    geotrans = original_data.GetGeoTransform()
+    proj = original_data.GetProjection()
+    dataset.SetGeoTransform(geotrans)
+    dataset.SetProjection(proj)
+    original_data = None
+    band = dataset.GetRasterBand(1)
+
+    driver = ogr.GetDriverByName("Memory")
+    # driver = ogr.GetDriverByName("ESRI Shapefile")
+
+    outDatasource = driver.CreateDataSource('out')
+    outLayer = outDatasource.CreateLayer("polygonized", srs=None)
+    if field_name is None:
+        field_name='BBox'
+    newField = ogr.FieldDefn(field_name, ogr.OFTInteger)
+    # newField2 = ogr.FieldDefn('BBox2', ogr.OFTInteger)
+    outLayer.CreateField(newField)
+    # outLayer.CreateField(newField2)
+    gdal.Polygonize(band, None, outLayer, 0, [], callback=None )
+    outLayer.CreateField(ogr.FieldDefn("cls_id",     ogr.OFTInteger))
+    outLayer.CreateField(ogr.FieldDefn("conf",     ogr.OFTReal))
+    for i in outLayer:
+        i.SetField('cls_id', class_id)
+        i.SetField('conf', confidence)
+        outLayer.SetFeature(i)
+        if i.GetField(field_name)==0:
+            outLayer.DeleteFeature(i.GetFID())
+    schema = []
+    ldefn = outLayer.GetLayerDefn()
+    for n in range(ldefn.GetFieldCount()):
+        fdefn = ldefn.GetFieldDefn(n)
+        schema.append(fdefn.name)
+    print (schema)
+    ########################
+    driver2 = ogr.GetDriverByName("Memory")
+    # driver2 = ogr.GetDriverByName("ESRI Shapefile")
+
+    outDatasource2 = driver.CreateDataSource('out2')
+    outLayer2 = outDatasource2.CreateLayer("polygonized", srs=None)
+    field_name2='BBox2'
+    newField2 = ogr.FieldDefn(field_name2, ogr.OFTInteger)
+    # newField2 = ogr.FieldDefn('BBox2', ogr.OFTInteger)
+    outLayer2.CreateField(newField2)
+    # outLayer.CreateField(newField2)
+    gdal.Polygonize(band, None, outLayer2, 0, [], callback=None )
+    outLayer2.CreateField(ogr.FieldDefn("cls_id",     ogr.OFTInteger))
+    outLayer2.CreateField(ogr.FieldDefn("conf",     ogr.OFTReal))
+    for i in outLayer2:
+        i.SetField('cls_id', class_id)
+        i.SetField('conf', confidence)
+        outLayer2.SetFeature(i)
+        if i.GetField(field_name2)==0:
+            outLayer2.DeleteFeature(i.GetFID())
+
+    ########################
+    # schema = []
+    # ldefn = outLayer2.GetLayerDefn()
+    # for n in range(ldefn.GetFieldCount()):
+    #     fdefn = ldefn.GetFieldDefn(n)
+    #     schema.append(fdefn.name)
+    # print (schema)
 
     
+    driver3 = ogr.GetDriverByName("ESRI Shapefile")
+    outDatasource3 = driver3.CreateDataSource(output_shp_file)
+    proj = outLayer.GetSpatialRef()
+    outLayer3 = outDatasource3.CreateLayer("new", proj, ogr.wkbPolygon)
+
+
+
+    field_name3 = 'BBox'
+    newField3 = ogr.FieldDefn(field_name3, ogr.OFTInteger)
+    outLayer3.CreateField(newField3)
+    outLayer3.CreateField(ogr.FieldDefn("cls_id",     ogr.OFTInteger))
+    outLayer3.CreateField(ogr.FieldDefn("conf",     ogr.OFTReal))
+    outLayer.ResetReading()    
+    for i in outLayer:
+        outLayer3.SetFeature(i)
+        # print('Here!')
+        outLayer3.CreateFeature(i)
+
+    # schema = []
+    # ldefn = outLayer3.GetLayerDefn()
+    # for n in range(ldefn.GetFieldCount()):
+    #     fdefn = ldefn.GetFieldDefn(n)
+    #     schema.append(fdefn.name)
+    # print (schema)
+
+    # outDatasource3.Destroy()
+    # outDatasource3 = None
+
+    outDatasource.Destroy()
+    outDatasource2.Destroy()
+    outDatasource3.Destroy()
+    sourceRaster = None
+    dataset.FlushCache()
+    dataset = None
+
+
 
 
 def gen_helper(xfiles, yfiles, index, input_shape, output_shape,rs=0,max_patches=5):
