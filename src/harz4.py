@@ -64,10 +64,11 @@ class HarzConfig(Config):
 
     # We use a GPU with 12GB memory, which can fit two images.
     # Adjust down if you use a smaller GPU.
-    IMAGES_PER_GPU = 2
+    IMAGES_PER_GPU = 4
+    GPU_COUNT = 2
 
     # Length of square anchor side in pixels
-    RPN_ANCHOR_SCALES = (8, 16, 32, 128, 256)
+    RPN_ANCHOR_SCALES = (4,8, 16, 32, 64)
 
     # Number of classes (including background)
     NUM_CLASSES = 1 + 3  # Background + bomb+meiler+barrows
@@ -83,8 +84,8 @@ class HarzConfig(Config):
     POST_NMS_ROIS_INFERENCE = 500
 
     # Number of training steps per epoch
-    STEPS_PER_EPOCH = 320
-    VALIDATION_STEPS = 35
+    STEPS_PER_EPOCH = 168
+    VALIDATION_STEPS = 20
 
     # Skip detections with < 90% confidence
     DETECTION_MIN_CONFIDENCE = 0.8
@@ -253,7 +254,7 @@ def train(model,dataset_dirX='/notebooks/tmp/data/bomb_meiler_barrow_mrcnn/x',
     print("Training network")
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
-                epochs=300,
+                epochs=150,
                 layers='all')
 
 

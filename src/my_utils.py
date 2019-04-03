@@ -787,10 +787,15 @@ def save_result(test_result,
         
     # Crate and save a tif file for the result, with the calculated geotransformation,
     # and projection from the original input
+    # output_raster = gdal.GetDriverByName('GTiff').Create(test_data_output_tif,
+    #                                                  test_result_cols, 
+    #                                                  test_result_rows, 
+    #                                                  1 ,gdal.GDT_Float32)  
     output_raster = gdal.GetDriverByName('GTiff').Create(test_data_output_tif,
-                                                     test_result_cols, 
-                                                     test_result_rows, 
+                                                     t.shape[1], 
+                                                     t.shape[0], 
                                                      1 ,gdal.GDT_Float32)  
+
     output_raster.GetRasterBand(1).WriteArray(t)
     output_raster.SetGeoTransform(gt)
     output_raster.SetProjection(proj)
@@ -828,10 +833,32 @@ def run_detection(batch_size, windowSize, output_patch, step_size, model, origin
     test_result_rows = test_data.shape[0] - (test_data.shape[0] % windowSize) - int((windowSize-step_size)/2)
     test_result_cols = test_data.shape[1] - (test_data.shape[1] % windowSize) - int((windowSize-step_size)/2)
 
+    # test_result_rows = test_data.shape[0] - (test_data.shape[0] % step_size) - int((windowSize-step_size)/2)
+    # test_result_cols = test_data.shape[1] - (test_data.shape[1] % step_size) - int((windowSize-step_size)/2)
+
     # Create an empty numpy array of shape similar to input test region
     test_result = np.zeros((test_data.shape))
 
     
+    # for i,j,im in gen:
+    #     top_indices.append((i,j))
+    #     if counter % batch_size == 0:
+    #         batch_input = np.empty((batch_size, windowSize, windowSize))
+    #     im = (im - im.min()) / (im.max() - im.min())
+    #     batch_input[batch_input_index] = im
+    #     batch_input_index += 1
+    #     counter += 1
+    #     if batch_input_index == batch_size:
+    #         predictions = np.argmax(model.predict(np.expand_dims(batch_input,-1)),axis=-1)
+    #         p = 0
+    #         for i,j in top_indices:
+    #             test_result[i+int((windowSize-step_size)/2):i+int((windowSize-step_size)/2)+output_patch[0],\
+    #                         j+int((windowSize-step_size)/2):j+int((windowSize-step_size)/2)+output_patch[1]]\
+    #             = predictions[p]                
+    #             p+=1
+    #         top_indices = []
+    #         batch_input_index = 0
+
     for i,j,im in gen:
         top_indices.append((i,j))
         if counter % batch_size == 0:
@@ -843,14 +870,23 @@ def run_detection(batch_size, windowSize, output_patch, step_size, model, origin
         if batch_input_index == batch_size:
             predictions = np.argmax(model.predict(np.expand_dims(batch_input,-1)),axis=-1)
             p = 0
-            for i,j in top_indices:
-                test_result[i+int((windowSize-step_size)/2):i+int((windowSize-step_size)/2)+output_patch[0],\
-                            j+int((windowSize-step_size)/2):j+int((windowSize-step_size)/2)+output_patch[1]]\
+            for r,c in top_indices:
+                test_result[r+int((windowSize-step_size)/2):r+int((windowSize-step_size)/2)+output_patch[0],\
+                            c+int((windowSize-step_size)/2):c+int((windowSize-step_size)/2)+output_patch[1]]\
                 = predictions[p]                
                 p+=1
             top_indices = []
             batch_input_index = 0
 
+    if batch_input_index > 0:
+        predictions = np.argmax(model.predict(np.expand_dims(batch_input[:batch_input_index],-1)),axis=-1)
+        p = 0
+        for r,c in top_indices:
+            test_result[r+int((windowSize-step_size)/2):r+int((windowSize-step_size)/2)+output_patch[0],\
+                        c+int((windowSize-step_size)/2):c+int((windowSize-step_size)/2)+output_patch[1]]\
+            = predictions[p]                
+            p+=1
+            
     prediction = save_result(test_result, 
                 step_size, 
                 test_result_rows,

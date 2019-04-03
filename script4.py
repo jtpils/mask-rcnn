@@ -42,31 +42,31 @@ from glob import glob
 from src.config import Config
 import src.model as modellib
 import src.utils as utils
-from src import harz3 as harz
+from src import harz4 as harz
 
 
 if __name__ == '__main__':
     import argparse
 
-    import tensorflow as tf
-	import keras
+    # import tensorflow as tf
+    # import keras.backend as K
 
-	def reset_tf_session():
-	    curr_session = tf.get_default_session()
-	    # close current session
-	    if curr_session is not None:
-	        curr_session.close()
-	    # reset graph
-	    K.clear_session()
-	    # create new session
-	    config = tf.ConfigProto(device_count = {'GPU': 2 , 'CPU': 4} )
-	    # config = tf.ConfigProto()
-	    config.gpu_options.allow_growth = True
-	    s = tf.InteractiveSession(config=config)
-	    K.set_session(s)
-	    return s
+    # # def reset_tf_session():
+    # #     curr_session = tf.get_default_session()
+    # #     # close current session
+    # #     if curr_session is not None:
+    # #         curr_session.close()
+    # #     # reset graph
+    # #     K.clear_session()
+    # #     # create new session
+    # #     config = tf.ConfigProto(device_count = {'GPU': 2 , 'CPU': 4} )
+    # #     # config = tf.ConfigProto()
+    # #     config.gpu_options.allow_growth = True
+    # #     s = tf.InteractiveSession(config=config)
+    # #     K.set_session(s)
+    # #     return s
 
-	s = reset_tf_session()
+    # # s = reset_tf_session()
 
     # Parse command line arguments
     parser = argparse.ArgumentParser(
